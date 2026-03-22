@@ -45,15 +45,71 @@
 
 ---
 
-## 🚀 一键安装与运行 (新手推荐)
+## 🚀 快速安装与运行
 
-对于 Linux / macOS 用户，可以直接在终端复制并运行以下**一行命令**。它会自动拉取代码、安装依赖并直接启动网页控制台：
+根据你的使用环境，我们提供了两种启动方式。如果你想在云服务器上 24 小时挂机注册，强烈推荐使用第二种**后台常驻部署**。
 
+### 方案一：极简一键运行 (适合本地电脑 / 已有 Python 3.10+ 环境)
+
+对于 macOS 或带有较新 Python 环境的 Linux 桌面用户，直接在终端执行以下命令即可拉取并启动：
 
 ```bash
-git clone [https://github.com/SIJULY/codex-console.git](https://github.com/SIJULY/codex-console.git) && cd codex-console && pip install -r requirements.txt && python webui.py
+git clone https://github.com/SIJULY/codex-console.git && cd codex-console && pip install -r requirements.txt && python webui.py --port 8090 --access-password admin888
 ```
-启动成功后，直接在浏览器访问 http://127.0.0.1:8000 即可开始使用！
+启动成功后，浏览器访问 http://ip:8090，密码 admin888 即可使用。
+
+### 方案二：云服务器全自动后台部署 (⭐ 强烈推荐)
+
+如果你使用的是云服务器（如甲骨文 ARM 实例、Ubuntu 20.04 等），系统默认环境可能较老，且 SSH 断开会导致任务停止。请使用以下步骤进行 纯净环境构建 + Systemd 守护进程部署
+
+* 1. 准备纯净的 Python 3.10 虚拟环境 (以 Miniconda 为例)
+```bash
+# 下载并安装 Miniconda (根据你的 CPU 架构替换链接，此处为 ARM64 示例)
+mkdir -p ~/miniconda3
+wget [https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-aarch64.sh](https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-aarch64.sh) -O ~/miniconda3/miniconda.sh
+bash ~/miniconda3/miniconda.sh -b -u -p ~/miniconda3
+source ~/miniconda3/bin/activate
+
+# 创建并激活名为 codex 的专属环境
+conda create -n codex python=3.10 -y
+conda activate codex
+```
+
+* 2. 拉取代码并安装依赖
+```bash
+# 推荐将项目放在 /opt 目录下统一管理
+git clone https://github.com/SIJULY/codex-console.git /opt/codex-console
+cd /opt/codex-console
+pip install -r requirements.txt
+```bash
+
+* 3. 注册系统级后台服务 (Systemd)
+
+执行以下命令，让控制台开机自启、崩溃自动重启，彻底脱离 SSH 窗口独立运行：
+```bash
+cat << 'EOF' > /etc/systemd/system/codex.service
+[Unit]
+Description=Codex Console Web UI
+After=network.target
+
+[Service]
+User=root
+WorkingDirectory=/opt/codex-console
+# 请确保以下 Python 路径与你实际的虚拟环境路径一致
+ExecStart=/root/miniconda3/envs/codex/bin/python webui.py --port 8090 --access-password admin888
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# 启动并设置开机自启
+systemctl daemon-reload
+systemctl enable codex
+systemctl start codex
+```bash
+🎉 部署完成！浏览器访问 http://ip:8090，密码 admin888 即可使用。
 
 ## 免责声明
 本项目仅供学习、研究和技术交流使用，请遵守相关平台和服务条款，不要用于违规、滥用或非法用途。

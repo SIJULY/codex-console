@@ -62,7 +62,7 @@ git clone https://github.com/SIJULY/codex-console.git && cd codex-console && pip
 
 如果你使用的是云服务器（如甲骨文 ARM 实例、Ubuntu 20.04 等），系统默认环境可能较老，且 SSH 断开会导致任务停止。请使用以下步骤进行 纯净环境构建 + Systemd 守护进程部署
 
-* 1. 准备纯净的 Python 3.10 虚拟环境 (以 Miniconda 为例)
+* 一. 准备纯净的 Python 3.10 虚拟环境 (以 Miniconda 为例)
 ```bash
 # 下载并安装 Miniconda (根据你的 CPU 架构替换链接，此处为 ARM64 示例)
 mkdir -p ~/miniconda3
@@ -75,7 +75,7 @@ conda create -n codex python=3.10 -y
 conda activate codex
 ```
 
-* 2. 拉取代码并安装依赖
+* 二. 拉取代码并安装依赖
 ```bash
 # 推荐将项目放在 /opt 目录下统一管理
 git clone https://github.com/SIJULY/codex-console.git /opt/codex-console
@@ -83,7 +83,7 @@ cd /opt/codex-console
 pip install -r requirements.txt
 ```bash
 
-* 3. 注册系统级后台服务 (Systemd)
+* 三. 注册系统级后台服务 (Systemd)
 
 执行以下命令，让控制台开机自启、崩溃自动重启，彻底脱离 SSH 窗口独立运行：
 ```bash

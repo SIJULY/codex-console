@@ -56,7 +56,7 @@
 ```bash
 git clone https://github.com/SIJULY/codex-console.git && cd codex-console && pip install -r requirements.txt && python webui.py --port 8090 --access-password admin888
 ```
-启动成功后，浏览器访问 http://ip:8090，密码 admin888 即可使用。
+启动成功后，浏览器访问 http:///127.0.0.1:8090，密码 admin888 即可使用。
 
 ### 方案二：云服务器全自动后台部署 (⭐ 强烈推荐)
 

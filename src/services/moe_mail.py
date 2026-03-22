@@ -124,10 +124,13 @@ class MeoMailEmailService(BaseEmailService):
             raise EmailServiceError(f"API 请求失败: {method} {endpoint} - {e}")
 
     def get_config(self, force_refresh: bool = False) -> Dict[str, Any]:
-        # 🚀 VIP 通道分流：如果是私人 API，伪装健康响应跳过检查
+        # 私人 API：跳过标准 /api/config 健康检查
         if self.is_custom_private_api:
             self.update_status(True)
-            return {"status": "ok", "emailDomains": self.config.get("default_domain", "sjune.mooo.com")}
+            return {
+                "status": "ok",
+                "emailDomains": self.config.get("default_domain", "sjune.mooo.com")
+            }
 
         if not force_refresh and self._cached_config and time.time() - self._last_config_check < 300:
             return self._cached_config
@@ -143,7 +146,7 @@ class MeoMailEmailService(BaseEmailService):
             return {}
 
     def create_email(self, config: Dict[str, Any] = None) -> Dict[str, Any]:
-        # 🚀 VIP 通道分流：私人 API 本地生成前缀
+        # 私人 API：本地直接生成随机前缀邮箱
         if self.is_custom_private_api:
             request_config = config or {}
             domain = request_config.get("domain") or self.config.get("default_domain") or "sjune.mooo.com"
@@ -163,7 +166,7 @@ class MeoMailEmailService(BaseEmailService):
             self.update_status(True)
             return email_info
 
-        # ------------------- 标准开源版逻辑 -------------------
+        # 标准开源版逻辑
         sys_config = self.get_config()
         default_domain = self.config.get("default_domain")
         if not default_domain and sys_config.get("emailDomains"):
@@ -226,9 +229,8 @@ class MeoMailEmailService(BaseEmailService):
 
         normalized = self._strip_html(str(text))
 
-        # 优先语义匹配
         semantic_patterns = [
-            r"(?:your\s+chatgpt\s+code\s+is|your\s+code\s+is|verification\s+code|验证码|驗證碼|検証コード|authentication\s+code)[^\d]{0,20}(\d{6})",
+            r"(?:your\s+chatgpt\s+code\s+is|your\s+code\s+is|verification\s+code|temporary\s+verification\s+code|authentication\s+code|验证码|驗證碼|検証コード|log-?in\s+code|login\s+code|otp)[^\d]{0,30}(\d{6})",
             r"\bcode\b[^\d]{0,20}(\d{6})",
             r"\botp\b[^\d]{0,20}(\d{6})",
         ]
@@ -237,7 +239,6 @@ class MeoMailEmailService(BaseEmailService):
             if match:
                 return match.group(1)
 
-        # 兜底：任意 6 位数字
         match = re.search(r"(?<!\d)(\d{6})(?!\d)", normalized)
         if match:
             return match.group(1)
@@ -248,11 +249,9 @@ class MeoMailEmailService(BaseEmailService):
         if payload is None:
             return None
 
-        # 直接字符串
         if isinstance(payload, str):
             return self._extract_code_from_text(payload)
 
-        # 列表递归
         if isinstance(payload, list):
             for item in payload:
                 code = self._extract_code_from_payload(item)
@@ -260,9 +259,8 @@ class MeoMailEmailService(BaseEmailService):
                     return code
             return None
 
-        # 字典递归
         if isinstance(payload, dict):
-            # 明确的 code 字段优先
+            # 直接 code 字段优先
             for key in ("code", "otp", "verification_code", "verificationCode"):
                 value = payload.get(key)
                 if value is not None:
@@ -270,25 +268,15 @@ class MeoMailEmailService(BaseEmailService):
                     if code:
                         return code
 
-            # 常见正文/主题字段
-            for key in (
-                "subject",
-                "body",
-                "content",
-                "html",
-                "message",
-                "text",
-                "raw_response",
-                "data",
-                "result",
-            ):
+            # 常见字段递归查找
+            for key in ("subject", "body", "content", "html", "message", "text", "raw_response", "data", "result"):
                 value = payload.get(key)
                 if value is not None:
                     code = self._extract_code_from_payload(value)
                     if code:
                         return code
 
-            # 全量兜底遍历
+            # 全量兜底
             for _, value in payload.items():
                 code = self._extract_code_from_payload(value)
                 if code:
@@ -296,57 +284,20 @@ class MeoMailEmailService(BaseEmailService):
 
         return None
 
-    def _parse_private_response(self, resp: requests.Response) -> Any:
-        content_type = (resp.headers.get("Content-Type") or "").lower()
-        text = resp.text or ""
-
-        # 优先按 JSON 解析
-        if "application/json" in content_type or text.strip().startswith("{") or text.strip().startswith("["):
-            try:
-                return resp.json()
-            except Exception:
-                pass
-
-        return text
-
-    def _build_private_mail_candidates(self, base_url: str, token: str, email: str) -> List[Dict[str, Any]]:
-        """
-        构建候选请求，兼容：
-        - base_url = http://ip:port
-        - base_url = http://ip:port/Mail
-        """
-        base = (base_url or "").strip().rstrip("/")
-        if not base:
-            base = "http://192.9.144.12:2099"
-
-        if base.lower().endswith("/mail"):
-            url = base
-        else:
-            url = f"{base}/Mail"
-
-        return [{
-            "url": url,
-            "params": {
-                "token": token,
-                "mail": email.strip(),
-            }
-        }]
-
     def get_verification_code(
-            self,
-            email: str,
-            email_id: str = None,
-            timeout: int = 120,
-            pattern: str = OTP_CODE_PATTERN,
-            otp_sent_at: Optional[float] = None,
+        self,
+        email: str,
+        email_id: str = None,
+        timeout: int = 120,
+        pattern: str = OTP_CODE_PATTERN,
+        otp_sent_at: Optional[float] = None,
     ) -> Optional[str]:
-        # 🚀 VIP 通道分流：私人 API 获取验证码
+        # 私人 API 分支
         if self.is_custom_private_api:
             logger.info(f"正在向专属私人服务器请求验证码: {email}...")
             start_time = time.time()
-            base_url = self.config.get("base_url", "http://192.9.144.12:2099")
-            token = self.config.get("api_key", "2088")
-            candidates = self._build_private_mail_candidates(base_url, token, email)
+            base_url = self.config.get("base_url", "http://192.9.144.12:2099").rstrip("/")
+            token = str(self.config.get("api_key") or "2088").strip()
 
             session = requests.Session()
             session.headers.update({
@@ -356,49 +307,71 @@ class MeoMailEmailService(BaseEmailService):
                 "Pragma": "no-cache",
             })
 
-            last_debug_text = ""
+            # 优先新接口
+            code_api_url = f"{base_url}/MailCode" if not base_url.endswith("/MailCode") else base_url
+            # 兼容旧接口
+            legacy_api_url = f"{base_url}/Mail" if not base_url.endswith("/Mail") else base_url
+
             poll_interval = 3
 
             while time.time() - start_time < timeout:
-                for candidate in candidates:
-                    try:
-                        resp = session.get(
-                            candidate["url"],
-                            params=candidate["params"],
-                            timeout=(10, 15),
-                            allow_redirects=True,
-                        )
+                # 1) 优先走新 JSON 接口
+                try:
+                    params = {
+                        "token": token,
+                        "mail": email,
+                    }
+                    if otp_sent_at:
+                        params["after"] = str(otp_sent_at)
 
-                        if resp.status_code == 404:
-                            logger.debug(f"专属 API 暂未匹配到验证码邮件: {email} -> {resp.status_code}")
-                            continue
+                    resp = session.get(
+                        code_api_url,
+                        params=params,
+                        timeout=(10, 15),
+                        allow_redirects=True,
+                    )
 
-                        if resp.status_code >= 400:
-                            logger.debug(f"专属 API 返回异常状态码: {resp.status_code}, email={email}")
-                            continue
+                    if resp.status_code == 200:
+                        try:
+                            payload = resp.json()
+                        except Exception:
+                            payload = {"raw_response": resp.text}
 
-                        payload = self._parse_private_response(resp)
                         code = self._extract_code_from_payload(payload)
-
                         if code:
                             logger.info(f"🎉 专属 API 捕获验证码: {code}")
                             self.update_status(True)
                             return code
 
-                        # 只记录少量调试摘要，避免日志刷屏
-                        try:
-                            if isinstance(payload, dict):
-                                debug_text = json.dumps(payload, ensure_ascii=False)[:300]
-                            else:
-                                debug_text = str(payload)[:300]
-                            if debug_text and debug_text != last_debug_text:
-                                last_debug_text = debug_text
-                                logger.debug(f"专属 API 已返回内容但未提取到验证码: {debug_text}")
-                        except Exception:
-                            pass
+                    elif resp.status_code not in (404,):
+                        logger.debug(f"专属 MailCode 返回状态码异常: {resp.status_code}, email={email}")
+
+                except Exception as e:
+                    logger.debug(f"专属 MailCode 请求轮询中... ({e})")
+
+                # 2) 只有在没有 otp_sent_at 时才回退旧接口
+                #    防止登录阶段重复拿到注册旧验证码
+                if not otp_sent_at:
+                    try:
+                        resp = session.get(
+                            legacy_api_url,
+                            params={
+                                "token": token,
+                                "mail": email,
+                            },
+                            timeout=(10, 15),
+                            allow_redirects=True,
+                        )
+
+                        if resp.status_code == 200:
+                            code = self._extract_code_from_text(resp.text)
+                            if code:
+                                logger.info(f"🎉 专属 API 捕获验证码(旧接口): {code}")
+                                self.update_status(True)
+                                return code
 
                     except Exception as e:
-                        logger.debug(f"专属 API 请求轮询中... ({e})")
+                        logger.debug(f"专属 Mail 旧接口请求轮询中... ({e})")
 
                 time.sleep(poll_interval)
 

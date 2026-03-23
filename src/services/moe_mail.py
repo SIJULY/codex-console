@@ -44,25 +44,62 @@ class MeoMailEmailService(BaseEmailService):
             "proxy_url": None,
             "default_domain": None,
             "default_expiry": 3600000,
+            # 新增：是否强制启用私人定制 API 模式
+            # True: 强制私人模式
+            # False: 强制标准模式
+            # None: 自动判断
+            "custom_private_api": None,
         }
 
         self.config = {**default_config, **(config or {})}
 
-        # 智能识别是否为你的私人定制 API
-        self.is_custom_private_api = "192.9.144.12" in self.config.get("base_url", "")
-
-        http_config = RequestConfig(
-            timeout=self.config["timeout"],
-            max_retries=self.config["max_retries"],
-        )
         self.http_client = HTTPClient(
             proxy_url=self.config.get("proxy_url"),
-            config=http_config
+            config=RequestConfig(
+                timeout=self.config["timeout"],
+                max_retries=self.config["max_retries"],
+            )
         )
 
         self._emails_cache: Dict[str, Dict[str, Any]] = {}
         self._last_config_check: float = 0
         self._cached_config: Optional[Dict[str, Any]] = None
+
+        # 双模式识别逻辑：
+        # 1. 如果配置里明确给了 custom_private_api=True/False，则按配置走
+        # 2. 如果没配置，则根据 base_url 自动识别
+        self.is_custom_private_api = self._detect_private_api_mode()
+
+        logger.info(
+            f"邮箱服务模式: {'私人定制 API 模式' if self.is_custom_private_api else '标准 REST API 模式'} "
+            f"(base_url={self.config.get('base_url')})"
+        )
+
+    def _detect_private_api_mode(self) -> bool:
+        cfg_value = self.config.get("custom_private_api", None)
+        if cfg_value is not None:
+            if isinstance(cfg_value, str):
+                return cfg_value.strip().lower() in ("1", "true", "yes", "on")
+            return bool(cfg_value)
+
+        base_url = str(self.config.get("base_url", "")).strip().rstrip("/").lower()
+
+        # 自动识别逻辑：
+        # 如果 base_url 明显就是你这种 Flask 私人邮局接口地址，则走私人模式
+        # 例如：
+        # http://x.x.x.x:2099
+        # http://domain.com
+        # http://domain.com/MailCode
+        # http://domain.com/Mail
+        #
+        # 标准 REST API 一般会提供 /api/config /api/emails/generate 等接口
+        # 你的私人邮局提供 /MailCode /Mail
+        #
+        # 这里不再绑定固定 IP。
+        if base_url.endswith("/mailcode") or base_url.endswith("/mail"):
+            return True
+
+        return False
 
     def _get_headers(self) -> Dict[str, str]:
         headers = {
@@ -129,7 +166,7 @@ class MeoMailEmailService(BaseEmailService):
             self.update_status(True)
             return {
                 "status": "ok",
-                "emailDomains": self.config.get("default_domain", "sjune.mooo.com")
+                "emailDomains": self.config.get("default_domain", "")
             }
 
         if not force_refresh and self._cached_config and time.time() - self._last_config_check < 300:
@@ -149,7 +186,10 @@ class MeoMailEmailService(BaseEmailService):
         # 私人 API：本地直接生成随机前缀邮箱
         if self.is_custom_private_api:
             request_config = config or {}
-            domain = request_config.get("domain") or self.config.get("default_domain") or "sjune.mooo.com"
+            domain = request_config.get("domain") or self.config.get("default_domain")
+            if not domain:
+                raise EmailServiceError("私人定制 API 模式下缺少 default_domain 或 domain 配置")
+
             prefix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=14))
             email_address = f"{prefix}@{domain}"
             email_info = {
@@ -260,7 +300,6 @@ class MeoMailEmailService(BaseEmailService):
             return None
 
         if isinstance(payload, dict):
-            # 直接 code 字段优先
             for key in ("code", "otp", "verification_code", "verificationCode"):
                 value = payload.get(key)
                 if value is not None:
@@ -268,7 +307,6 @@ class MeoMailEmailService(BaseEmailService):
                     if code:
                         return code
 
-            # 常见字段递归查找
             for key in ("subject", "body", "content", "html", "message", "text", "raw_response", "data", "result"):
                 value = payload.get(key)
                 if value is not None:
@@ -276,13 +314,34 @@ class MeoMailEmailService(BaseEmailService):
                     if code:
                         return code
 
-            # 全量兜底
             for _, value in payload.items():
                 code = self._extract_code_from_payload(value)
                 if code:
                     return code
 
         return None
+
+    def _build_private_api_urls(self) -> Dict[str, str]:
+        base_url = self.config.get("base_url", "").strip().rstrip("/")
+        if not base_url:
+            raise EmailServiceError("base_url 未配置")
+
+        if base_url.lower().endswith("/mailcode"):
+            root = base_url[:-9].rstrip("/")
+            code_api_url = base_url
+            legacy_api_url = f"{root}/Mail"
+        elif base_url.lower().endswith("/mail"):
+            root = base_url[:-5].rstrip("/")
+            legacy_api_url = base_url
+            code_api_url = f"{root}/MailCode"
+        else:
+            code_api_url = f"{base_url}/MailCode"
+            legacy_api_url = f"{base_url}/Mail"
+
+        return {
+            "code_api_url": code_api_url,
+            "legacy_api_url": legacy_api_url,
+        }
 
     def get_verification_code(
         self,
@@ -296,8 +355,11 @@ class MeoMailEmailService(BaseEmailService):
         if self.is_custom_private_api:
             logger.info(f"正在向专属私人服务器请求验证码: {email}...")
             start_time = time.time()
-            base_url = self.config.get("base_url", "http://192.9.144.12:2099").rstrip("/")
             token = str(self.config.get("api_key") or "2088").strip()
+
+            urls = self._build_private_api_urls()
+            code_api_url = urls["code_api_url"]
+            legacy_api_url = urls["legacy_api_url"]
 
             session = requests.Session()
             session.headers.update({
@@ -306,11 +368,6 @@ class MeoMailEmailService(BaseEmailService):
                 "Cache-Control": "no-cache",
                 "Pragma": "no-cache",
             })
-
-            # 优先新接口
-            code_api_url = f"{base_url}/MailCode" if not base_url.endswith("/MailCode") else base_url
-            # 兼容旧接口
-            legacy_api_url = f"{base_url}/Mail" if not base_url.endswith("/Mail") else base_url
 
             poll_interval = 3
 
@@ -350,7 +407,6 @@ class MeoMailEmailService(BaseEmailService):
                     logger.debug(f"专属 MailCode 请求轮询中... ({e})")
 
                 # 2) 只有在没有 otp_sent_at 时才回退旧接口
-                #    防止登录阶段重复拿到注册旧验证码
                 if not otp_sent_at:
                     try:
                         resp = session.get(
@@ -570,6 +626,7 @@ class MeoMailEmailService(BaseEmailService):
             "name": self.name,
             "base_url": self.config["base_url"],
             "default_domain": self.config.get("default_domain"),
+            "custom_private_api": self.is_custom_private_api,
             "system_config": config,
             "cached_emails_count": len(self._emails_cache),
             "status": self.status.value,

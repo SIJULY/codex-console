@@ -53,6 +53,7 @@ const elements = {
     addDuckmailFields: document.getElementById('add-duckmail-fields'),
     addFreemailFields: document.getElementById('add-freemail-fields'),
     addImapFields: document.getElementById('add-imap-fields'),
+    customPrivateApi: document.getElementById('custom-private-api'),
 
     // 编辑自定义域名模态框
     editCustomModal: document.getElementById('edit-custom-modal'),
@@ -66,6 +67,7 @@ const elements = {
     editImapFields: document.getElementById('edit-imap-fields'),
     editCustomTypeBadge: document.getElementById('edit-custom-type-badge'),
     editCustomSubTypeHidden: document.getElementById('edit-custom-sub-type-hidden'),
+    editCustomPrivateApi: document.getElementById('edit-custom-private-api'),
 
     // 编辑 Outlook 模态框
     editOutlookModal: document.getElementById('edit-outlook-modal'),
@@ -137,6 +139,7 @@ function initEventListeners() {
     elements.addCustomBtn.addEventListener('click', () => {
         elements.addCustomForm.reset();
         switchAddSubType('moemail');
+        if (elements.customPrivateApi) elements.customPrivateApi.checked = false;
         elements.addCustomModal.classList.add('active');
     });
     elements.closeCustomModal.addEventListener('click', () => elements.addCustomModal.classList.remove('active'));
@@ -441,7 +444,8 @@ async function handleAddCustom(e) {
         config = {
             base_url: formData.get('api_url'),
             api_key: formData.get('api_key'),
-            default_domain: formData.get('domain')
+            default_domain: formData.get('domain'),
+            custom_private_api: formData.get('custom_private_api') === 'on'
         };
     } else if (subType === 'tempmail') {
         serviceType = 'temp_mail';
@@ -490,6 +494,7 @@ async function handleAddCustom(e) {
         toast.success('服务添加成功');
         elements.addCustomModal.classList.remove('active');
         e.target.reset();
+        if (elements.customPrivateApi) elements.customPrivateApi.checked = false;
         loadCustomServices();
         loadStats();
     } catch (error) {
@@ -632,23 +637,26 @@ async function editCustomService(id, subType) {
         if (resolvedSubType === 'moemail') {
             document.getElementById('edit-custom-api-url').value = service.config?.base_url || '';
             document.getElementById('edit-custom-api-key').value = '';
-            document.getElementById('edit-custom-api-key').placeholder = service.config?.api_key ? '已设置，留空保持不变' : 'API Key';
+            document.getElementById('edit-custom-api-key').placeholder = service.config?.has_api_key ? '已设置，留空保持不变' : 'API Key';
             document.getElementById('edit-custom-domain').value = service.config?.default_domain || service.config?.domain || '';
+            if (elements.editCustomPrivateApi) {
+                elements.editCustomPrivateApi.checked = !!service.config?.custom_private_api;
+            }
         } else if (resolvedSubType === 'tempmail') {
             document.getElementById('edit-tm-base-url').value = service.config?.base_url || '';
             document.getElementById('edit-tm-admin-password').value = '';
-            document.getElementById('edit-tm-admin-password').placeholder = service.config?.admin_password ? '已设置，留空保持不变' : '请输入 Admin 密码';
+            document.getElementById('edit-tm-admin-password').placeholder = service.config?.has_admin_password ? '已设置，留空保持不变' : '请输入 Admin 密码';
             document.getElementById('edit-tm-domain').value = service.config?.domain || '';
         } else if (resolvedSubType === 'duckmail') {
             document.getElementById('edit-dm-base-url').value = service.config?.base_url || '';
             document.getElementById('edit-dm-api-key').value = '';
-            document.getElementById('edit-dm-api-key').placeholder = service.config?.api_key ? '已设置，留空保持不变' : '请输入 API Key（可选）';
+            document.getElementById('edit-dm-api-key').placeholder = service.config?.has_api_key ? '已设置，留空保持不变' : '请输入 API Key（可选）';
             document.getElementById('edit-dm-domain').value = service.config?.default_domain || '';
             document.getElementById('edit-dm-password-length').value = service.config?.password_length || 12;
         } else if (resolvedSubType === 'freemail') {
             document.getElementById('edit-fm-base-url').value = service.config?.base_url || '';
             document.getElementById('edit-fm-admin-token').value = '';
-            document.getElementById('edit-fm-admin-token').placeholder = service.config?.admin_token ? '已设置，留空保持不变' : '请输入 Admin Token';
+            document.getElementById('edit-fm-admin-token').placeholder = service.config?.has_admin_token ? '已设置，留空保持不变' : '请输入 Admin Token';
             document.getElementById('edit-fm-domain').value = service.config?.domain || '';
         } else {
             document.getElementById('edit-imap-host').value = service.config?.host || '';
@@ -656,7 +664,7 @@ async function editCustomService(id, subType) {
             document.getElementById('edit-imap-use-ssl').value = service.config?.use_ssl !== false ? 'true' : 'false';
             document.getElementById('edit-imap-email').value = service.config?.email || '';
             document.getElementById('edit-imap-password').value = '';
-            document.getElementById('edit-imap-password').placeholder = service.config?.password ? '已设置，留空保持不变' : '请输入密码/授权码';
+            document.getElementById('edit-imap-password').placeholder = service.config?.has_password ? '已设置，留空保持不变' : '请输入密码/授权码';
         }
 
         elements.editCustomModal.classList.add('active');
@@ -676,7 +684,8 @@ async function handleEditCustom(e) {
     if (subType === 'moemail') {
         config = {
             base_url: formData.get('api_url'),
-            default_domain: formData.get('domain')
+            default_domain: formData.get('domain'),
+            custom_private_api: formData.get('custom_private_api') === 'on'
         };
         const apiKey = formData.get('api_key');
         if (apiKey && apiKey.trim()) config.api_key = apiKey.trim();
@@ -739,10 +748,10 @@ async function editOutlookService(id) {
         document.getElementById('edit-outlook-id').value = service.id;
         document.getElementById('edit-outlook-email').value = service.config?.email || service.name || '';
         document.getElementById('edit-outlook-password').value = '';
-        document.getElementById('edit-outlook-password').placeholder = service.config?.password ? '已设置，留空保持不变' : '请输入密码';
+        document.getElementById('edit-outlook-password').placeholder = service.config?.has_password ? '已设置，留空保持不变' : '请输入密码';
         document.getElementById('edit-outlook-client-id').value = service.config?.client_id || '';
         document.getElementById('edit-outlook-refresh-token').value = '';
-        document.getElementById('edit-outlook-refresh-token').placeholder = service.config?.refresh_token ? '已设置，留空保持不变' : 'OAuth Refresh Token';
+        document.getElementById('edit-outlook-refresh-token').placeholder = service.config?.has_refresh_token ? '已设置，留空保持不变' : 'OAuth Refresh Token';
         document.getElementById('edit-outlook-priority').value = service.priority || 0;
         document.getElementById('edit-outlook-enabled').checked = service.enabled;
         elements.editOutlookModal.classList.add('active');

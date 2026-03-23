@@ -44,11 +44,7 @@ class MeoMailEmailService(BaseEmailService):
             "proxy_url": None,
             "default_domain": None,
             "default_expiry": 3600000,
-            # 新增：是否强制启用私人定制 API 模式
-            # True: 强制私人模式
-            # False: 强制标准模式
-            # None: 自动判断
-            "custom_private_api": None,
+            "custom_private_api": None,  # True=私人模式, False=标准模式, None=自动判断
         }
 
         self.config = {**default_config, **(config or {})}
@@ -65,9 +61,7 @@ class MeoMailEmailService(BaseEmailService):
         self._last_config_check: float = 0
         self._cached_config: Optional[Dict[str, Any]] = None
 
-        # 双模式识别逻辑：
-        # 1. 如果配置里明确给了 custom_private_api=True/False，则按配置走
-        # 2. 如果没配置，则根据 base_url 自动识别
+        # 双模式识别逻辑
         self.is_custom_private_api = self._detect_private_api_mode()
 
         logger.info(
@@ -76,7 +70,13 @@ class MeoMailEmailService(BaseEmailService):
         )
 
     def _detect_private_api_mode(self) -> bool:
+        """
+        双模式识别逻辑：
+        1. 如果配置中明确指定 custom_private_api=True/False，则优先使用配置
+        2. 否则根据 base_url 自动识别
+        """
         cfg_value = self.config.get("custom_private_api", None)
+
         if cfg_value is not None:
             if isinstance(cfg_value, str):
                 return cfg_value.strip().lower() in ("1", "true", "yes", "on")
@@ -84,21 +84,11 @@ class MeoMailEmailService(BaseEmailService):
 
         base_url = str(self.config.get("base_url", "")).strip().rstrip("/").lower()
 
-        # 自动识别逻辑：
-        # 如果 base_url 明显就是你这种 Flask 私人邮局接口地址，则走私人模式
-        # 例如：
-        # http://x.x.x.x:2099
-        # http://domain.com
-        # http://domain.com/MailCode
-        # http://domain.com/Mail
-        #
-        # 标准 REST API 一般会提供 /api/config /api/emails/generate 等接口
-        # 你的私人邮局提供 /MailCode /Mail
-        #
-        # 这里不再绑定固定 IP。
+        # 自动识别：如果用户直接填的是 /MailCode 或 /Mail 结尾，则认定为私人模式
         if base_url.endswith("/mailcode") or base_url.endswith("/mail"):
             return True
 
+        # 其他情况默认走标准 REST API 模式
         return False
 
     def _get_headers(self) -> Dict[str, str]:

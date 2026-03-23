@@ -214,6 +214,7 @@
                             <option value="imap">标准 IMAP（Gmail/QQ/163等）</option>
                         </select>
                     </div>
+
                     <!-- MoeMail 字段 -->
                     <div id="add-moemail-fields">
                         <div class="form-group">
@@ -228,7 +229,17 @@
                             <label for="custom-domain">邮箱域名</label>
                             <input type="text" id="custom-domain" name="domain" placeholder="example.com">
                         </div>
+                        <div class="form-group">
+                            <label>
+                                <input type="checkbox" id="custom-private-api" name="custom_private_api">
+                                私人邮局模式
+                            </label>
+                            <small style="color: var(--text-muted);">
+                                勾选后将使用 /MailCode 和 /Mail 接口，不调用标准 /api/emails/generate 接口
+                            </small>
+                        </div>
                     </div>
+
                     <!-- TempMail 字段 -->
                     <div id="add-tempmail-fields" style="display:none;">
                         <div class="form-group">
@@ -244,6 +255,7 @@
                             <input type="text" id="custom-tm-domain" name="tm_domain" placeholder="example.com">
                         </div>
                     </div>
+
                     <!-- DuckMail 字段 -->
                     <div id="add-duckmail-fields" style="display:none;">
                         <div class="form-group">
@@ -263,6 +275,7 @@
                             <input type="number" id="custom-dm-password-length" name="dm_password_length" min="6" max="64" value="12">
                         </div>
                     </div>
+
                     <!-- Freemail 字段 -->
                     <div id="add-freemail-fields" style="display:none;">
                         <div class="form-group">
@@ -278,6 +291,7 @@
                             <input type="text" id="custom-fm-domain" name="fm_domain" placeholder="example.com">
                         </div>
                     </div>
+
                     <!-- IMAP 字段 -->
                     <div id="add-imap-fields" style="display:none;">
                         <div class="form-group">
@@ -307,6 +321,7 @@
                             <input type="password" id="custom-imap-password" name="imap_password" placeholder="Gmail 需使用 App Password，QQ/163 需使用授权码">
                         </div>
                     </div>
+
                     <div class="form-row">
                         <div class="form-group">
                             <label for="custom-priority">优先级</label>
@@ -328,7 +343,6 @@
         </div>
     </div>
 
-
     <!-- 编辑自定义邮箱服务模态框（含类型选择） -->
     <div class="modal" id="edit-custom-modal">
         <div class="modal-content">
@@ -348,6 +362,7 @@
                         <label>服务类型</label>
                         <div id="edit-custom-type-badge" style="padding: 6px 0; color: var(--text-muted); font-size: 0.875rem;"></div>
                     </div>
+
                     <!-- MoeMail 字段 -->
                     <div id="edit-moemail-fields">
                         <div class="form-group">
@@ -363,7 +378,17 @@
                             <label for="edit-custom-domain">邮箱域名</label>
                             <input type="text" id="edit-custom-domain" name="domain" placeholder="example.com">
                         </div>
+                        <div class="form-group">
+                            <label>
+                                <input type="checkbox" id="edit-custom-private-api" name="custom_private_api">
+                                私人邮局模式
+                            </label>
+                            <small style="color: var(--text-muted);">
+                                勾选后将使用 /MailCode 和 /Mail 接口，不调用标准 /api/emails/generate 接口
+                            </small>
+                        </div>
                     </div>
+
                     <!-- TempMail 字段 -->
                     <div id="edit-tempmail-fields" style="display:none;">
                         <div class="form-group">
@@ -380,6 +405,7 @@
                             <input type="text" id="edit-tm-domain" name="tm_domain" placeholder="example.com">
                         </div>
                     </div>
+
                     <!-- DuckMail 字段 -->
                     <div id="edit-duckmail-fields" style="display:none;">
                         <div class="form-group">
@@ -400,6 +426,7 @@
                             <input type="number" id="edit-dm-password-length" name="dm_password_length" min="6" max="64" value="12">
                         </div>
                     </div>
+
                     <!-- Freemail 字段 -->
                     <div id="edit-freemail-fields" style="display:none;">
                         <div class="form-group">
@@ -416,6 +443,7 @@
                             <input type="text" id="edit-fm-domain" name="fm_domain" placeholder="example.com">
                         </div>
                     </div>
+
                     <!-- IMAP 字段 -->
                     <div id="edit-imap-fields" style="display:none;">
                         <div class="form-group">
@@ -445,6 +473,7 @@
                             <small style="color: var(--text-muted);">留空则保持原值不变</small>
                         </div>
                     </div>
+
                     <div class="form-row">
                         <div class="form-group">
                             <label for="edit-custom-priority">优先级</label>
@@ -515,8 +544,7 @@
         </div>
     </div>
 
-
-<script src="/static/js/utils.js?v={{ static_version }}"></script>
+    <script src="/static/js/utils.js?v={{ static_version }}"></script>
     <script src="/static/js/email_services.js?v={{ static_version }}"></script>
 </body>
 </html>

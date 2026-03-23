@@ -43,7 +43,7 @@ class EmailServiceResponse(BaseModel):
     name: str
     enabled: bool
     priority: int
-    config: Optional[Dict[str, Any]] = None  # 过滤敏感信息后的配置
+    config: Optional[Dict[str, Any]] = None
     last_used: Optional[str] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
@@ -67,7 +67,7 @@ class ServiceTestResult(BaseModel):
 
 class OutlookBatchImportRequest(BaseModel):
     """Outlook 批量导入请求"""
-    data: str  # 多行数据，每行格式: 邮箱----密码 或 邮箱----密码----client_id----refresh_token
+    data: str
     enabled: bool = True
     priority: int = 0
 
@@ -83,8 +83,7 @@ class OutlookBatchImportResponse(BaseModel):
 
 # ============== Helper Functions ==============
 
-# 敏感字段列表，返回响应时需要过滤
-SENSITIVE_FIELDS = {'password', 'api_key', 'refresh_token', 'access_token', 'admin_token'}
+SENSITIVE_FIELDS = {'password', 'api_key', 'refresh_token', 'access_token', 'admin_token', 'admin_password'}
 
 def filter_sensitive_config(config: Dict[str, Any]) -> Dict[str, Any]:
     """过滤敏感配置信息"""
@@ -94,12 +93,10 @@ def filter_sensitive_config(config: Dict[str, Any]) -> Dict[str, Any]:
     filtered = {}
     for key, value in config.items():
         if key in SENSITIVE_FIELDS:
-            # 敏感字段不返回，但标记是否存在
             filtered[f"has_{key}"] = bool(value)
         else:
             filtered[key] = value
 
-    # 为 Outlook 计算是否有 OAuth
     if config.get('client_id') and config.get('refresh_token'):
         filtered['has_oauth'] = True
 
@@ -129,13 +126,11 @@ async def get_email_services_stats():
     with get_db() as db:
         from sqlalchemy import func
 
-        # 按类型统计
         type_stats = db.query(
             EmailServiceModel.service_type,
             func.count(EmailServiceModel.id)
         ).group_by(EmailServiceModel.service_type).all()
 
-        # 启用数量
         enabled_count = db.query(func.count(EmailServiceModel.id)).filter(
             EmailServiceModel.enabled == True
         ).scalar()
@@ -147,7 +142,7 @@ async def get_email_services_stats():
             'duck_mail_count': 0,
             'freemail_count': 0,
             'imap_mail_count': 0,
-            'tempmail_available': True,  # 临时邮箱始终可用
+            'tempmail_available': True,
             'enabled_count': enabled_count
         }
 
@@ -201,6 +196,7 @@ async def get_service_types():
                     {"name": "base_url", "label": "API 地址", "required": True},
                     {"name": "api_key", "label": "API Key", "required": True},
                     {"name": "default_domain", "label": "默认域名", "required": False},
+                    {"name": "custom_private_api", "label": "私人邮局模式", "required": False, "default": False},
                 ]
             },
             {
@@ -298,7 +294,7 @@ async def get_email_service_full(service_id: int):
             "name": service.name,
             "enabled": service.enabled,
             "priority": service.priority,
-            "config": service.config or {},  # 返回完整配置
+            "config": service.config or {},
             "last_used": service.last_used.isoformat() if service.last_used else None,
             "created_at": service.created_at.isoformat() if service.created_at else None,
             "updated_at": service.updated_at.isoformat() if service.updated_at else None,
@@ -308,14 +304,12 @@ async def get_email_service_full(service_id: int):
 @router.post("", response_model=EmailServiceResponse)
 async def create_email_service(request: EmailServiceCreate):
     """创建邮箱服务配置"""
-    # 验证服务类型
     try:
         EmailServiceType(request.service_type)
     except ValueError:
         raise HTTPException(status_code=400, detail=f"无效的服务类型: {request.service_type}")
 
     with get_db() as db:
-        # 检查名称是否重复
         existing = db.query(EmailServiceModel).filter(EmailServiceModel.name == request.name).first()
         if existing:
             raise HTTPException(status_code=400, detail="服务名称已存在")
@@ -346,11 +340,9 @@ async def update_email_service(service_id: int, request: EmailServiceUpdate):
         if request.name is not None:
             update_data["name"] = request.name
         if request.config is not None:
-            # 合并配置而不是替换
             current_config = service.config or {}
             merged_config = {**current_config, **request.config}
-            # 移除空值
-            merged_config = {k: v for k, v in merged_config.items() if v}
+            merged_config = {k: v for k, v in merged_config.items() if v is not None and v != ""}
             update_data["config"] = merged_config
         if request.enabled is not None:
             update_data["enabled"] = request.enabled
@@ -460,12 +452,6 @@ async def reorder_services(service_ids: List[int]):
 async def batch_import_outlook(request: OutlookBatchImportRequest):
     """
     批量导入 Outlook 邮箱账户
-
-    支持两种格式：
-    - 格式一（密码认证）：邮箱----密码
-    - 格式二（XOAUTH2 认证）：邮箱----密码----client_id----refresh_token
-
-    每行一个账户，使用四个连字符（----）分隔字段
     """
     lines = request.data.strip().split("\n")
     total = len(lines)
@@ -478,13 +464,11 @@ async def batch_import_outlook(request: OutlookBatchImportRequest):
         for i, line in enumerate(lines):
             line = line.strip()
 
-            # 跳过空行和注释
             if not line or line.startswith("#"):
                 continue
 
             parts = line.split("----")
 
-            # 验证格式
             if len(parts) < 2:
                 failed += 1
                 errors.append(f"行 {i+1}: 格式错误，至少需要邮箱和密码")
@@ -493,13 +477,11 @@ async def batch_import_outlook(request: OutlookBatchImportRequest):
             email = parts[0].strip()
             password = parts[1].strip()
 
-            # 验证邮箱格式
             if "@" not in email:
                 failed += 1
                 errors.append(f"行 {i+1}: 无效的邮箱地址: {email}")
                 continue
 
-            # 检查是否已存在
             existing = db.query(EmailServiceModel).filter(
                 EmailServiceModel.service_type == "outlook",
                 EmailServiceModel.name == email
@@ -510,13 +492,11 @@ async def batch_import_outlook(request: OutlookBatchImportRequest):
                 errors.append(f"行 {i+1}: 邮箱已存在: {email}")
                 continue
 
-            # 构建配置
             config = {
                 "email": email,
                 "password": password
             }
 
-            # 检查是否有 OAuth 信息（格式二）
             if len(parts) >= 4:
                 client_id = parts[2].strip()
                 refresh_token = parts[3].strip()
@@ -524,7 +504,6 @@ async def batch_import_outlook(request: OutlookBatchImportRequest):
                     config["client_id"] = client_id
                     config["refresh_token"] = refresh_token
 
-            # 创建服务记录
             try:
                 service = EmailServiceModel(
                     service_type="outlook",
@@ -577,8 +556,6 @@ async def batch_delete_outlook(service_ids: List[int]):
     return {"success": True, "deleted": deleted, "message": f"已删除 {deleted} 个服务"}
 
 
-# ============== 临时邮箱测试 ==============
-
 class TempmailTestRequest(BaseModel):
     """临时邮箱测试请求"""
     api_url: Optional[str] = None
@@ -597,7 +574,6 @@ async def test_tempmail_service(request: TempmailTestRequest):
         config = {"base_url": base_url}
         tempmail = EmailServiceFactory.create(EmailServiceType.TEMPMAIL, config)
 
-        # 检查服务健康状态
         health = tempmail.check_health()
 
         if health:
